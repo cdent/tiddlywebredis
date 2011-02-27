@@ -1,0 +1,6 @@
+Experiment with using redis as a store for TiddlyWeb.
+
+This is not complete, by any stretch.
+
+You must be running a redis server for the tests to pass. The 'redis' module
+for Python is required.
