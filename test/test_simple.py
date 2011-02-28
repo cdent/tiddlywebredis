@@ -63,3 +63,21 @@ def test_store_tiddler():
     store.delete(Bag('testone'))
 
     py.test.raises(NoTiddlerError, 'store.get(tiddler2)')
+
+
+def test_list_bag_tiddlers():
+    bag = Bag('testtwo')
+    store.put(bag)
+
+    tiddler = Tiddler('alpha', 'testtwo')
+    tiddler.text = 'alpha cow'
+    store.put(tiddler)
+
+    tiddler = Tiddler('beta', 'testtwo')
+    tiddler.text = 'beta cow'
+    store.put(tiddler)
+
+    tiddlers = list(store.list_bag_tiddlers(bag))
+    assert len(tiddlers) == 2
+    assert ['alpha', 'beta'] == sorted([tiddler.title for tiddler in tiddlers])
+

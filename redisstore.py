@@ -178,6 +178,16 @@ class Store(StorageInterface):
         self.redis.rpush('tid:%s:revisions' % tid, rid)
         self.redis.sadd('bid:%s:tiddlers' % bid, tid)
 
+    def list_bag_tiddlers(self, bag):
+        bid = self.redis.get('bag:%s:bid' % bag.name)
+        if not bid:
+            raise NoBagError('No bag while trying to list tiddlers: %s' 
+                    % bag.name)
+        tids = self.redis.smembers('bid:%s:tiddlers' % bid)
+        for tid in tids:
+            title = self.redis.get('tid:%s:title' % tid)
+            yield Tiddler(title, bag.name)
+
     def list_tiddler_revisions(self, tiddler):
         tid = self.redis.get('tiddler:%s:%s:tid' % (tiddler.bag, tiddler.title))
         if not tid:
@@ -195,7 +205,8 @@ class Store(StorageInterface):
         self.redis.set('rid:%s:tid' % rid, tid)
         for tag in tiddler.tags:
             self.redis.sadd('rid:%s:tags' % rid, tag)
-        self.redis.hmset('rid:%s:fields' % rid, tiddler.fields)
+        if tiddler.fields:
+            self.redis.hmset('rid:%s:fields' % rid, tiddler.fields)
         return rid
 
     def _get_policy(self, key):
