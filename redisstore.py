@@ -1,6 +1,5 @@
 """
-A redis-based store for TiddlyWeb. First thing we need to do is
-come up with keys to use.
+A redis-based store for TiddlyWeb. Uses keys as follows:
 
 recipes:
     ids:nextRecipeID: the counter of recipe ids
@@ -51,20 +50,19 @@ tiddlers:
 
     tid:#tid:title:   tiddler title
     tid:#tid:bid:     bag id
-    tid:#tid:revisions (ordered) list of rids
+    tid:#tid:revisions (ordered) list of rvids
 
     tiddler:#bag_name:#tiddler_name:tid: map bag+tiddler to tid
 
 tiddler revisions:
     ids:nextRevisionID:the counter of revision ids
 
-    rid:#rid:text:    tiddler text
-    rid:#rid:tags:    list of tags # should have reverse index for this
-    rid:#rid:modified:
-    rid:#rid:modifier:
-    rid:#rid:fields:  hash 
-    rid:#rid:tid:     tid of this
-
+    rvid:#rvid:text:    tiddler text
+    rvid:#rvid:tags:    list of tags # should have reverse index for this
+    rvid:#rvid:modified:
+    rvid:#rvid:modifier:
+    rvid:#rvid:fields:  hash
+    rvid:#rvid:tid:     tid of this
 """
 
 import redis
@@ -80,17 +78,28 @@ from tiddlyweb.stores import StorageInterface
 
 R = None
 
+ENTITY_MAP = {
+        'user': 'uid',
+        'recipe': 'rid',
+        'bag': 'bid',
+        'policy': 'pid',
+        'tiddler': 'tid',
+        'revision': 'rid',
+        }
+
+
 class Store(StorageInterface):
 
     def __init__(self, store_config=None, environ=None):
         global R
         super(Store, self).__init__(store_config, environ)
         if not R:
+            # TODO: Accept config params from tiddlywebconfig.py
             R = redis.Redis()
         self.redis = R
 
     def bag_delete(self, bag):
-        bid = self.redis.get('bag:%s:bid' % bag.name)
+        bid = self._id_for_entity('bag', bag.name)
         if not bid:
             raise NoBagError('unable to get id for %s' % bag.name)
         tiddler_ids = list(self.redis.smembers('bid:%s:tiddlers' % bid))
@@ -107,7 +116,7 @@ class Store(StorageInterface):
         self.redis.srem('bags', bid)
 
     def bag_get(self, bag):
-        bid = self.redis.get('bag:%s:bid' % bag.name)
+        bid = self._id_for_entity('bag', bag.name)
         if not bid:
             raise NoBagError('unable to get id for %s' % bag.name)
 
@@ -116,8 +125,23 @@ class Store(StorageInterface):
 
         return bag
 
+    def bag_put(self, bag):
+        bid = self._id_for_entity('bag', bag.name)
+
+        if not bid:
+            bid = self.redis.incr('ids:nextBagID')
+            self.redis.set('bag:%s:bid' % bag.name, bid)
+
+        self.redis.set('bid:%s:name' % bid, bag.name)
+        self.redis.set('bid:%s:desc' % bid, bag.desc)
+
+        pid = self.redis.get('bid:%s:policy' % bid)
+        pid = self._set_policy(bag.policy, pid)
+        self.redis.set('bid:%s:policy' % bid, pid)
+        self.redis.sadd('bags', bid)
+
     def recipe_delete(self, recipe):
-        rid = self.redis.get('recipe:%s:rid' % recipe.name)
+        rid = self._id_for_entity('recipe', recipe.name)
         if not rid:
             raise NoRecipeError('unable to get id for %s' % recipe.name)
         self.redis.delete('recipe:%s:rid' % recipe.name)
@@ -129,7 +153,7 @@ class Store(StorageInterface):
         self.redis.srem('recipes', rid)
 
     def recipe_get(self, recipe):
-        rid = self.redis.get('recipe:%s:rid' % recipe.name)
+        rid = self._id_for_entity('recipe', recipe.name)
         if not rid:
             raise NoRecipeError('unable to get id for %s' % recipe.name)
 
@@ -146,9 +170,8 @@ class Store(StorageInterface):
 
         return recipe
 
-
     def recipe_put(self, recipe):
-        rid = self.redis.get('recipe:%s:rid' % recipe.name)
+        rid = self._id_for_entity('recipe', recipe.name)
 
         if not rid:
             rid = self.redis.incr('ids:nextRecipeID')
@@ -165,78 +188,12 @@ class Store(StorageInterface):
 
         self.redis.sadd('recipes', rid)
 
-
-    def bag_put(self, bag):
-        bid = self.redis.get('bag:%s:bid' % bag.name)
-
-        if not bid:
-            bid = self.redis.incr('ids:nextBagID')
-            self.redis.set('bag:%s:bid' % bag.name, bid)
-
-        self.redis.set('bid:%s:name' % bid, bag.name)
-        self.redis.set('bid:%s:desc' % bid, bag.desc)
-
-        pid = self.redis.get('bid:%s:policy' % bid)
-        pid = self._set_policy(bag.policy, pid)
-        self.redis.set('bid:%s:policy' % bid, pid)
-        self.redis.sadd('bags', bid)
-
-    def user_get(self, user):
-        uid = self.redis.get('user:%s:uid' % user.usersign)
-        if not uid:
-            raise NoUserError('no user found for %s' % user.usersign)
-
-        user._password = self.redis.get('uid:%s:password' % uid)
-        user.note = self.redis.get('uid:%s:note' % uid)
-        user.roles = list(self.redis.smembers('uid:%s:roles' % uid))
-        return user
-
-    def user_delete(self, user):
-        uid = self.redis.get('user:%s:uid' % user.usersign)
-        if not uid:
-            raise NoUserError('no user found for %s' % user.usersign)
-        self.redis.delete('uid:%s:usersign' % uid)
-        self.redis.delete('uid:%s:password' % uid)
-        self.redis.delete('uid:%s:roles' % uid)
-        self.redis.delete('user:%s:uid' % user.usersign)
-        self.redis.srem('users', uid)
-
-    def user_put(self, user):
-        uid = self.redis.get('user:%s:uid' % user.usersign)
-        if not uid:
-            uid = self.redis.incr('ids:nextUserID')
-            self.redis.set('user:%s:uid' % user.usersign, uid)
-
-        self.redis.set('uid:%s:usersign' % uid, user.usersign)
-        self.redis.set('uid:%s:password' % uid, user._password)
-        self.redis.set('uid:%s:note' % uid, user.note)
-        self.redis.delete('uid:%s:roles' % uid)
-        for role in user.list_roles():
-            self.redis.sadd('uid:%s:roles' % uid, role)
-        self.redis.sadd('users', uid)
-
-    def tiddler_get(self, tiddler):
-        tid = self.redis.get('tiddler:%s:%s:tid' % (tiddler.bag, tiddler.title))
-        if not tid:
-            raise NoTiddlerError('unable to load %s:%s'
-                    % (tiddler.bag, tiddler.title))
-        current_rid = self.redis.lindex('tid:%s:revisions' % tid, -1)
-        base_rid = self.redis.lindex('tid:%s:revisions' % tid, 0)
-        tiddler.creator = self.redis.get('rid:%s:modifier' % base_rid)
-        tiddler.created = self.redis.get('rid:%s:modified' % base_rid)
-        tiddler.modifier = self.redis.get('rid:%s:modifier' % current_rid)
-        tiddler.modified = self.redis.get('rid:%s:modified' % current_rid)
-        tiddler.tags = self.redis.smembers('rid:%s:tags' % current_rid)
-        tiddler.fields = self.redis.hgetall('rid:%s:fields' % current_rid)
-        tiddler.text = self.redis.get('rid:%s:text' % current_rid)
-        return tiddler
-
     def tiddler_delete(self, tiddler):
-        bid = self.redis.get('bag:%s:bid' % tiddler.bag)
+        bid = self._id_for_entity('bag', tiddler.bag)
         if not bid:
             raise NoBagError('no bag found: %s:%s'
                     % (tiddler.bag, tiddler.title))
-        tid = self.redis.get('tiddler:%s:%s:tid' % (tiddler.bag, tiddler.title))
+        tid = self._tid_for_tiddler(tiddler)
         if not tid:
             raise NoTiddlerError('no tiddler found: %s:%s'
                     % (tiddler.bag, tiddler.title))
@@ -254,27 +211,71 @@ class Store(StorageInterface):
         self.redis.srem('bid:%s:tiddlers' % bid, tid)
         self.redis.delete('tiddler:%s:%s:tid' % (tiddler.bag, tiddler.title))
 
-    def tiddler_put(self, tiddler):
-        bid = self.redis.get('bag:%s:bid' % tiddler.bag)
-        if not bid:
-            raise NoBagError('No bag while trying to put tiddler: %s:%s' 
+    def tiddler_get(self, tiddler):
+        tid = self._tid_for_tiddler(tiddler)
+        if not tid:
+            raise NoTiddlerError('unable to load %s:%s'
                     % (tiddler.bag, tiddler.title))
-        tid = self.redis.get('tiddler:%s:%s:tid' % (tiddler.bag, tiddler.title))
+        current_rvid = self.redis.lindex('tid:%s:revisions' % tid, -1)
+        base_rvid = self.redis.lindex('tid:%s:revisions' % tid, 0)
+        tiddler.creator = self.redis.get('rvid:%s:modifier' % base_rvid)
+        tiddler.created = self.redis.get('rvid:%s:modified' % base_rvid)
+        tiddler.modifier = self.redis.get('rvid:%s:modifier' % current_rvid)
+        tiddler.modified = self.redis.get('rvid:%s:modified' % current_rvid)
+        tiddler.tags = self.redis.smembers('rvid:%s:tags' % current_rvid)
+        tiddler.fields = self.redis.hgetall('rvid:%s:fields' % current_rvid)
+        tiddler.text = self.redis.get('rvid:%s:text' % current_rvid)
+        return tiddler
+
+    def tiddler_put(self, tiddler):
+        bid = self._id_for_entity('bag', tiddler.bag)
+        if not bid:
+            raise NoBagError('No bag while trying to put tiddler: %s:%s'
+                    % (tiddler.bag, tiddler.title))
+        tid = self._tid_for_tiddler(tiddler)
         if not tid:
             tid = self.redis.incr('ids:nextTiddlerID')
             self.redis.set('tiddler:%s:%s:tid' % (tiddler.bag, tiddler.title),
                     tid)
             self.redis.set('tid:%s:title' % tid, tiddler.title)
             self.redis.set('tid:%s:bid' % tid, bid)
-        rid = self._new_revision(tiddler, tid)
-        self.redis.rpush('tid:%s:revisions' % tid, rid)
+        rvid = self._new_revision(tiddler, tid)
+        self.redis.rpush('tid:%s:revisions' % tid, rvid)
         self.redis.sadd('bid:%s:tiddlers' % bid, tid)
 
-    def list_users(self):
-        uids = self.redis.smembers('users')
-        for uid in uids:
-            name = self.redis.get('uid:%s:usersign' % uid)
-            yield User(name)
+    def user_delete(self, user):
+        uid = self._id_for_entity('user', user.usersign)
+        if not uid:
+            raise NoUserError('no user found for %s' % user.usersign)
+        self.redis.delete('uid:%s:usersign' % uid)
+        self.redis.delete('uid:%s:password' % uid)
+        self.redis.delete('uid:%s:roles' % uid)
+        self.redis.delete('user:%s:uid' % user.usersign)
+        self.redis.srem('users', uid)
+
+    def user_get(self, user):
+        uid = self._id_for_entity('user', user.usersign)
+        if not uid:
+            raise NoUserError('no user found for %s' % user.usersign)
+
+        user._password = self.redis.get('uid:%s:password' % uid)
+        user.note = self.redis.get('uid:%s:note' % uid)
+        user.roles = list(self.redis.smembers('uid:%s:roles' % uid))
+        return user
+
+    def user_put(self, user):
+        uid = self._id_for_entity('user', user.usersign)
+        if not uid:
+            uid = self.redis.incr('ids:nextUserID')
+            self.redis.set('user:%s:uid' % user.usersign, uid)
+
+        self.redis.set('uid:%s:usersign' % uid, user.usersign)
+        self.redis.set('uid:%s:password' % uid, user._password)
+        self.redis.set('uid:%s:note' % uid, user.note)
+        self.redis.delete('uid:%s:roles' % uid)
+        for role in user.list_roles():
+            self.redis.sadd('uid:%s:roles' % uid, role)
+        self.redis.sadd('users', uid)
 
     def list_bags(self):
         bids = self.redis.smembers('bags')
@@ -288,10 +289,16 @@ class Store(StorageInterface):
             name = self.redis.get('rid:%s:name' % rid)
             yield Recipe(name)
 
+    def list_users(self):
+        uids = self.redis.smembers('users')
+        for uid in uids:
+            name = self.redis.get('uid:%s:usersign' % uid)
+            yield User(name)
+
     def list_bag_tiddlers(self, bag):
-        bid = self.redis.get('bag:%s:bid' % bag.name)
+        bid = self._id_for_entity('bag', bag.name)
         if not bid:
-            raise NoBagError('No bag while trying to list tiddlers: %s' 
+            raise NoBagError('No bag while trying to list tiddlers: %s'
                     % bag.name)
         tids = self.redis.smembers('bid:%s:tiddlers' % bid)
         for tid in tids:
@@ -299,7 +306,7 @@ class Store(StorageInterface):
             yield Tiddler(title, bag.name)
 
     def list_tiddler_revisions(self, tiddler):
-        tid = self.redis.get('tiddler:%s:%s:tid' % (tiddler.bag, tiddler.title))
+        tid = self._tid_for_tiddler(tiddler)
         if not tid:
             raise NoTiddler('no such tiddler: %s:%s'
                     % (tiddler.bag, tiddler.title))
@@ -307,17 +314,10 @@ class Store(StorageInterface):
         revisions.reverse()
         return revisions
 
-    def _new_revision(self, tiddler, tid):
-        rid = self.redis.incr('ids:nextRevisionID')
-        self.redis.set('rid:%s:text' % rid, tiddler.text)
-        self.redis.set('rid:%s:modifier' % rid, tiddler.modifier)
-        self.redis.set('rid:%s:modified' % rid, tiddler.modified)
-        self.redis.set('rid:%s:tid' % rid, tid)
-        for tag in tiddler.tags:
-            self.redis.sadd('rid:%s:tags' % rid, tag)
-        if tiddler.fields:
-            self.redis.hmset('rid:%s:fields' % rid, tiddler.fields)
-        return rid
+    def _delete_policy(self, pid):
+        for item in Policy.attributes:
+            key = 'pid:%s:%s' % (pid, item)
+            self.redis.delete(key)
 
     def _get_policy(self, key):
         pid = self.redis.get(key)
@@ -331,6 +331,22 @@ class Store(StorageInterface):
         policy.owner = self.redis.get('pid:%s:owner' % pid)
         return policy
 
+    def _id_for_entity(self, entity, name):
+        id = ENTITY_MAP[entity]
+        return self.redis.get('%s:%s:%s' % (entity, name, id))
+
+    def _new_revision(self, tiddler, tid):
+        rvid = self.redis.incr('ids:nextRevisionID')
+        self.redis.set('rvid:%s:text' % rvid, tiddler.text)
+        self.redis.set('rvid:%s:modifier' % rvid, tiddler.modifier)
+        self.redis.set('rvid:%s:modified' % rvid, tiddler.modified)
+        self.redis.set('rvid:%s:tid' % rvid, tid)
+        for tag in tiddler.tags:
+            self.redis.sadd('rvid:%s:tags' % rvid, tag)
+        if tiddler.fields:
+            self.redis.hmset('rvid:%s:fields' % rvid, tiddler.fields)
+        return rvid
+
     def _set_policy(self, container_policy, pid):
         if not pid:
             pid = self.redis.incr('ids:nextPolicyID')
@@ -341,11 +357,6 @@ class Store(StorageInterface):
         self.redis.set('pid:%s:owner' % pid, container_policy.owner)
         return pid
 
-    def _delete_policy(self, pid):
-        for item in Policy.attributes:
-            key = 'pid:%s:%s' % (pid, item)
-            self.redis.delete(key)
-        
-
-
-
+    def _tid_for_tiddler(self, tiddler):
+        return self.redis.get('tiddler:%s:%s:tid'
+                % (tiddler.bag, tiddler.title))
