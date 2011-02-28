@@ -5,7 +5,8 @@ from tiddlywebplugins.utils import get_store
 from tiddlyweb.config import config
 from tiddlyweb.model.bag import Bag
 from tiddlyweb.model.tiddler import Tiddler
-from tiddlyweb.store import NoTiddlerError, NoBagError
+from tiddlyweb.model.user import User
+from tiddlyweb.store import NoTiddlerError, NoBagError, NoUserError
 
 def setup_module(module):
     module.store = get_store(config)
@@ -88,4 +89,34 @@ def test_list_bags():
     bags = list(store.list_bags())
     assert len(bags) == 2
     assert ['testthree', 'testtwo'] == sorted([bag.name for bag in bags])
+
+def test_users():
+    userc = User('cdent')
+    userc.set_password('foobar')
+    userc.add_role('ADMIN')
+    userc.note = 'A simple programmer of matter'
+
+    store.put(userc)
+
+    userf = User('FND')
+    userf.set_password('I<3whitespace')
+
+    store.put(userf)
+
+    user2 = store.get(User('cdent'))
+    assert user2.usersign == userc.usersign
+    assert user2.check_password('foobar')
+    assert user2.list_roles() == userc.list_roles()
+    assert user2.note == userc.note
+
+    users = list(store.list_users())
+    assert len(users) == 2
+    assert ['FND', 'cdent'] == sorted([user.usersign for user in users])
+
+    store.delete(User('FND'))
+
+    users = list(store.list_users())
+    assert len(users) == 1
+
+    py.test.raises(NoUserError, "store.get(User('FND'))")
 

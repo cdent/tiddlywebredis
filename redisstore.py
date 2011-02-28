@@ -39,8 +39,8 @@ bags:
 users:
     ids.nextUserID:   the counter of user ids
 
-    uid:#uid:name:    user name
-    uid:#uid:pass:    user password
+    uid:#uid:usersign:    user name
+    uid:#uid:password:    user password
     uid:#uid:roles:   set of roles
 
     user:#name:uid:   uid associated with user name
@@ -72,7 +72,8 @@ import redis
 from tiddlyweb.model.bag import Bag
 from tiddlyweb.model.policy import Policy
 from tiddlyweb.model.tiddler import Tiddler
-from tiddlyweb.store import NoBagError, NoTiddlerError
+from tiddlyweb.model.user import User
+from tiddlyweb.store import NoBagError, NoTiddlerError, NoUserError
 from tiddlyweb.stores import StorageInterface
 
 R = None
@@ -123,6 +124,40 @@ class Store(StorageInterface):
         pid = self._set_policy(bag.policy, pid)
         self.redis.set('bid:%s:policy' % bid, pid)
         self.redis.sadd('bags', bid)
+
+    def user_get(self, user):
+        uid = self.redis.get('user:%s:uid' % user.usersign)
+        if not uid:
+            raise NoUserError('no user found for %s' % user.usersign)
+
+        user._password = self.redis.get('uid:%s:password' % uid)
+        user.note = self.redis.get('uid:%s:note' % uid)
+        user.roles = list(self.redis.smembers('uid:%s:roles' % uid))
+        return user
+
+    def user_delete(self, user):
+        uid = self.redis.get('user:%s:uid' % user.usersign)
+        if not uid:
+            raise NoUserError('no user found for %s' % user.usersign)
+        self.redis.delete('uid:%s:usersign' % uid)
+        self.redis.delete('uid:%s:password' % uid)
+        self.redis.delete('uid:%s:roles' % uid)
+        self.redis.delete('user:%s:uid' % user.usersign)
+        self.redis.srem('users', uid)
+
+    def user_put(self, user):
+        uid = self.redis.get('user:%s:uid' % user.usersign)
+        if not uid:
+            uid = self.redis.incr('ids:nextUserID')
+            self.redis.set('user:%s:uid' % user.usersign, uid)
+
+        self.redis.set('uid:%s:usersign' % uid, user.usersign)
+        self.redis.set('uid:%s:password' % uid, user._password)
+        self.redis.set('uid:%s:note' % uid, user.note)
+        self.redis.delete('uid:%s:roles' % uid)
+        for role in user.list_roles():
+            self.redis.sadd('uid:%s:roles' % uid, role)
+        self.redis.sadd('users', uid)
 
     def tiddler_get(self, tiddler):
         tid = self.redis.get('tiddler:%s:%s:tid' % (tiddler.bag, tiddler.title))
@@ -178,6 +213,12 @@ class Store(StorageInterface):
         rid = self._new_revision(tiddler, tid)
         self.redis.rpush('tid:%s:revisions' % tid, rid)
         self.redis.sadd('bid:%s:tiddlers' % bid, tid)
+
+    def list_users(self):
+        uids = self.redis.smembers('users')
+        for uid in uids:
+            name = self.redis.get('uid:%s:usersign' % uid)
+            yield User(name)
 
     def list_bags(self):
         bids = self.redis.smembers('bags')
