@@ -17,6 +17,10 @@ do use db 5, then you could have:
 
 !ToDo
 
+* Consider using r->keys('tid:1:*') and similar to gather keys for
+  deletion. This may not be ideal though, as matching for keys when
+  there are many may be expensive.
+
 * Unicode handling. Dealing with keys that might have ':' in them.
 
 * Package as a normal tiddlywebplugin.
@@ -29,6 +33,8 @@ do use db 5, then you could have:
 * Consider reverse indexes for things like bags in recipes, and 
   users in policies. (Such things have been useful in TiddlySpace).
   Again these are not yet done so as to maintain focus.
+
+* See what the options are for pub/sub.
 
 !Copyright Etc
 
