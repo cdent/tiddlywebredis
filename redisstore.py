@@ -101,9 +101,11 @@ class Store(StorageInterface):
 
         self._delete_bag_tiddlers(bag.name, bid)
 
+        delete_keys = []
         for key_name in ['tiddlers', 'name', 'desc']:
-            self.redis.delete('bid:%s:%s' % (bid, key_name))
-        self.redis.delete('bag:%s:bid' % bag.name)
+            delete_keys.append('bid:%s:%s' % (bid, key_name))
+        delete_keys.append('bag:%s:bid' % bag.name)
+        self.redis.delete(*delete_keys)
 
         pid = self.redis.get('bid:%s:policy' % bid)
         self._delete_policy(pid)
@@ -141,9 +143,11 @@ class Store(StorageInterface):
         if not rid:
             raise NoRecipeError('unable to get id for %s' % recipe.name)
 
+        delete_keys = []
         for key_name in ['name', 'desc', 'rlist']:
-            self.redis.delete('rid:%s:%s' % (rid, key_name))
-        self.redis.delete('recipe:%s:rid' % recipe.name)
+            delete_keys.append('rid:%s:%s' % (rid, key_name))
+        delete_keys.append('recipe:%s:rid' % recipe.name)
+        self.redis.delete(*delete_keys)
 
         pid = self.redis.get('rid:%s:policy' % rid)
         self._delete_policy(pid)
@@ -162,8 +166,8 @@ class Store(StorageInterface):
 
         recipe_items = []
         for bag_filter in recipe_list:
-            bag, filter = bag_filter.split('?', 1)
-            recipe_items.append((bag, filter))
+            bag, filter_string = bag_filter.split('?', 1)
+            recipe_items.append((bag, filter_string))
         recipe.set_recipe(recipe_items)
 
         return recipe
@@ -182,8 +186,9 @@ class Store(StorageInterface):
         pid = self._set_policy(recipe.policy, pid)
         self.redis.set('rid:%s:policy' % rid, pid)
 
-        for bag, filter in recipe.get_recipe():
-            self.redis.rpush('rid:%s:rlist' % rid, '%s?%s' % (bag, filter))
+        for bag, filter_string in recipe.get_recipe():
+            self.redis.rpush('rid:%s:rlist' % rid, '%s?%s'
+                    % (bag, filter_string))
 
         self.redis.sadd('recipes', rid)
 
@@ -249,10 +254,13 @@ class Store(StorageInterface):
         if not uid:
             raise NoUserError('no user found for %s' % user.usersign)
 
+        delete_keys = []
         for key_name in ['usersign', 'password', 'roles']:
-            self.redis.delete('uid:%s:%s' % (uid, key_name))
+            delete_keys.append('uid:%s:%s' % (uid, key_name))
 
-        self.redis.delete('user:%s:uid' % user.usersign)
+        delete_keys.append('user:%s:uid' % user.usersign)
+
+        self.redis.delete(*delete_keys)
 
         self.redis.srem('users', uid)
 
@@ -314,7 +322,7 @@ class Store(StorageInterface):
     def list_tiddler_revisions(self, tiddler):
         tid = self._tid_for_tiddler(tiddler)
         if not tid:
-            raise NoTiddler('no such tiddler: %s:%s'
+            raise NoTiddlerError('no such tiddler: %s:%s'
                     % (tiddler.bag, tiddler.title))
 
         revisions = self.redis.lrange('tid:%s:revisions' % tid, 0, -1)
@@ -348,8 +356,8 @@ class Store(StorageInterface):
         return policy
 
     def _id_for_entity(self, entity, name):
-        id = ENTITY_MAP[entity]
-        return self.redis.get('%s:%s:%s' % (entity, name, id))
+        entity_id = ENTITY_MAP[entity]
+        return self.redis.get('%s:%s:%s' % (entity, name, entity_id))
 
     def _new_revision(self, tiddler, tid):
         rvid = self.redis.incr('ids:nextRevisionID')
