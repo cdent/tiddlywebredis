@@ -17,6 +17,8 @@ do use db 5, then you could have:
 
 !ToDo
 
+* Unicode handling. Dealing with keys that might have ':' in them.
+
 * Package as a normal tiddlywebplugin.
 
 * Manage keys that operate as reverse indexes for things we might
