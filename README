@@ -1,6 +1,34 @@
 Experiment with using redis as a store for TiddlyWeb.
 
-This is not complete, by any stretch.
-
 You must be running a redis server for the tests to pass. The 'redis' module
 for Python is required.
+
+This code supports the full StorageInterface, including policies and
+tiddler revisions.
+
+It makes no assumptions about how you are managing your redis server.
+You will need to start that, and if you use any non-default configuration
+you will need to put that in tiddlywebconfig.py. For example if you want
+do use db 5, then you could have:
+
+    config = {
+        'server_store': ['redisstore', {'db': 5}],
+    }
+
+!ToDo
+
+* Package as a normal tiddlywebplugin.
+
+* Manage keys that operate as reverse indexes for things we might
+  like to index_query, such as modifier, tags and fields. This has
+  not been done thus far as diddling with that would distract from
+  getting the core set of keys in place.
+
+* Consider reverse indexes for things like bags in recipes, and 
+  users in policies. (Such things have been useful in TiddlySpace).
+  Again these are not yet done so as to maintain focus.
+
+!Copyright Etc
+
+Copyright 2011, Chris Dent <cdent@peermore.com>
+Release under the BSD License
