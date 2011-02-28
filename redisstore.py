@@ -8,7 +8,7 @@ recipes:
     rid.#rid.name:    name of the recipe
     rid.#rid.desc:    description of the recipe
     rid.#rid.policy:  id of the policy
-    rid.#rid.rlist:   id of the recipe list
+    rid.#rid.rlist:   list of recipe
 
     recipe.#name.rid: rid associated with recipe name
     recipes:          set of all recipe rids
@@ -37,7 +37,7 @@ bags:
     bags:             set of all bag bids
 
 users:
-    ids.nextUserID:   the counter of user ids
+    ids:nextUserID:   the counter of user ids
 
     uid:#uid:usersign:    user name
     uid:#uid:password:    user password
@@ -71,9 +71,11 @@ import redis
 
 from tiddlyweb.model.bag import Bag
 from tiddlyweb.model.policy import Policy
+from tiddlyweb.model.recipe import Recipe
 from tiddlyweb.model.tiddler import Tiddler
 from tiddlyweb.model.user import User
-from tiddlyweb.store import NoBagError, NoTiddlerError, NoUserError
+from tiddlyweb.store import (NoBagError, NoTiddlerError, NoUserError,
+        NoRecipeError)
 from tiddlyweb.stores import StorageInterface
 
 R = None
@@ -98,6 +100,8 @@ class Store(StorageInterface):
             self.tiddler_delete(tiddler)
         self.redis.delete('bid:%s:tiddlers' % bid)
         self.redis.delete('bag:%s:bid' % bag.name)
+        pid = self.redis.get('bid:%s:policy' % bid)
+        self._delete_policy(pid)
         self.redis.srem('bags', bid)
 
     def bag_get(self, bag):
@@ -110,11 +114,61 @@ class Store(StorageInterface):
 
         return bag
 
+    def recipe_delete(self, recipe):
+        rid = self.redis.get('recipe:%s:rid' % recipe.name)
+        if not rid:
+            raise NoRecipeError('unable to get id for %s' % recipe.name)
+        self.redis.delete('recipe:%s:rid' % recipe.name)
+        self.redis.delete('rid:%s:name' % rid)
+        self.redis.delete('rid:%s:desc' % rid)
+        self.redis.delete('rid:%s:rlist' % rid)
+        pid = self.redis.get('rid:%s:policy' % rid)
+        self._delete_policy(pid)
+        self.redis.srem('recipes', rid)
+
+    def recipe_get(self, recipe):
+        rid = self.redis.get('recipe:%s:rid' % recipe.name)
+        if not rid:
+            raise NoRecipeError('unable to get id for %s' % recipe.name)
+
+        recipe.desc = self.redis.get('rid:%s:desc' % rid)
+        recipe.policy = self._get_policy('rid:%s:policy' % rid)
+
+        recipe_list = self.redis.lrange('rid:%s:rlist' % rid, 0, -1)
+
+        recipe_items = []
+        for bag_filter in recipe_list:
+            bag, filter = bag_filter.split('?', 1)
+            recipe_items.append((bag, filter))
+        recipe.set_recipe(recipe_items)
+
+        return recipe
+
+
+    def recipe_put(self, recipe):
+        rid = self.redis.get('recipe:%s:rid' % recipe.name)
+
+        if not rid:
+            rid = self.redis.incr('ids:nextRecipeID')
+            self.redis.set('recipe:%s:rid' % recipe.name, rid)
+
+        self.redis.set('rid:%s:name' % rid, recipe.name)
+        self.redis.set('rid:%s:desc' % rid, recipe.desc)
+        pid = self.redis.get('rid:%s:policy' % rid)
+        pid = self._set_policy(recipe.policy, pid)
+        self.redis.set('rid:%s:policy' % rid, pid)
+
+        for bag, filter in recipe.get_recipe():
+            self.redis.rpush('rid:%s:rlist' % rid, '%s?%s' % (bag, filter))
+
+        self.redis.sadd('recipes', rid)
+
+
     def bag_put(self, bag):
         bid = self.redis.get('bag:%s:bid' % bag.name)
 
         if not bid:
-            bid = self.redis.incr('ids.nextBagID')
+            bid = self.redis.incr('ids:nextBagID')
             self.redis.set('bag:%s:bid' % bag.name, bid)
 
         self.redis.set('bid:%s:name' % bid, bag.name)
@@ -226,6 +280,12 @@ class Store(StorageInterface):
             name = self.redis.get('bid:%s:name' % bid)
             yield Bag(name)
 
+    def list_recipes(self):
+        rids = self.redis.smembers('recipes')
+        for rid in rids:
+            name = self.redis.get('rid:%s:name' % rid)
+            yield Recipe(name)
+
     def list_bag_tiddlers(self, bag):
         bid = self.redis.get('bag:%s:bid' % bag.name)
         if not bid:
@@ -278,6 +338,11 @@ class Store(StorageInterface):
                 self.redis.sadd(key, member)
         self.redis.set('pid:%s:owner' % pid, container_policy.owner)
         return pid
+
+    def _delete_policy(self, pid):
+        for item in Policy.attributes:
+            key = 'pid:%s:%s' % (pid, item)
+            self.redis.delete(key)
         
 
 

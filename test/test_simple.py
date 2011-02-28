@@ -1,10 +1,12 @@
 
 import py.test 
 
+from tiddlyweb.control import get_tiddlers_from_recipe
 from tiddlywebplugins.utils import get_store
 from tiddlyweb.config import config
 from tiddlyweb.model.bag import Bag
 from tiddlyweb.model.tiddler import Tiddler
+from tiddlyweb.model.recipe import Recipe
 from tiddlyweb.model.user import User
 from tiddlyweb.store import NoTiddlerError, NoBagError, NoUserError
 
@@ -120,3 +122,50 @@ def test_users():
 
     py.test.raises(NoUserError, "store.get(User('FND'))")
 
+def test_recipes():
+    store.put(Bag('alpha'))
+    store.put(Bag('beta'))
+
+    tiddler = Tiddler('steak', 'alpha')
+    tiddler.text = 'rare'
+    store.put(tiddler)
+    tiddler = Tiddler('liver', 'beta')
+    tiddler.text = 'icky'
+    store.put(tiddler)
+    tiddler = Tiddler('steak', 'beta')
+    tiddler.text = 'medium'
+    store.put(tiddler)
+
+    recipec = Recipe('cow')
+    recipec.desc = 'a meaty melange'
+    recipec.policy.accept.append('cdent')
+    recipec.set_recipe([
+        ('alpha', 'select=tag:systemConfig'),
+        ('beta', '')])
+
+    store.put(recipec)
+
+    recipes = list(store.list_recipes())
+    assert len(recipes) == 1
+    reciped = store.get(recipes[0])
+
+    assert reciped.name == recipec.name
+    assert reciped.desc == recipec.desc
+    recipe_list = reciped.get_recipe()
+
+    assert recipe_list[0] == ['alpha', 'select=tag:systemConfig']
+    assert recipe_list[1] == ['beta', '']
+
+    tiddlers = list(get_tiddlers_from_recipe(reciped))
+
+    assert len(tiddlers) == 2
+    for tiddler in tiddlers:
+        assert tiddler.bag == 'beta'
+        if tiddler.title == 'alpha':
+            tiddler = store.get(tiddler)
+            assert tiddler.text == 'medium'
+
+    store.delete(reciped)
+
+    recipes = list(store.list_recipes())
+    assert len(recipes) == 0
