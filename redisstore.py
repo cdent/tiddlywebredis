@@ -99,6 +99,8 @@ class Store(StorageInterface):
             tiddler = Tiddler(title, bag.name)
             self.tiddler_delete(tiddler)
         self.redis.delete('bid:%s:tiddlers' % bid)
+        self.redis.delete('bid:%s:name' % bid)
+        self.redis.delete('bid:%s:desc' % bid)
         self.redis.delete('bag:%s:bid' % bag.name)
         pid = self.redis.get('bid:%s:policy' % bid)
         self._delete_policy(pid)
