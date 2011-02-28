@@ -82,9 +82,6 @@ ENTITY_MAP = {
         'user': 'uid',
         'recipe': 'rid',
         'bag': 'bid',
-        'policy': 'pid',
-        'tiddler': 'tid',
-        'revision': 'rid',
         }
 
 
@@ -94,25 +91,23 @@ class Store(StorageInterface):
         global R
         super(Store, self).__init__(store_config, environ)
         if not R:
-            # TODO: Accept config params from tiddlywebconfig.py
-            R = redis.Redis()
+            R = redis.Redis(**store_config)
         self.redis = R
 
     def bag_delete(self, bag):
         bid = self._id_for_entity('bag', bag.name)
         if not bid:
             raise NoBagError('unable to get id for %s' % bag.name)
-        tiddler_ids = list(self.redis.smembers('bid:%s:tiddlers' % bid))
-        for tid in tiddler_ids:
-            title = self.redis.get('tid:%s:title' % tid)
-            tiddler = Tiddler(title, bag.name)
-            self.tiddler_delete(tiddler)
-        self.redis.delete('bid:%s:tiddlers' % bid)
-        self.redis.delete('bid:%s:name' % bid)
-        self.redis.delete('bid:%s:desc' % bid)
+
+        self._delete_bag_tiddlers(bag.name, bid)
+
+        for key_name in ['tiddlers', 'name', 'desc']:
+            self.redis.delete('bid:%s:%s' % (bid, key_name))
         self.redis.delete('bag:%s:bid' % bag.name)
+
         pid = self.redis.get('bid:%s:policy' % bid)
         self._delete_policy(pid)
+
         self.redis.srem('bags', bid)
 
     def bag_get(self, bag):
@@ -138,18 +133,21 @@ class Store(StorageInterface):
         pid = self.redis.get('bid:%s:policy' % bid)
         pid = self._set_policy(bag.policy, pid)
         self.redis.set('bid:%s:policy' % bid, pid)
+
         self.redis.sadd('bags', bid)
 
     def recipe_delete(self, recipe):
         rid = self._id_for_entity('recipe', recipe.name)
         if not rid:
             raise NoRecipeError('unable to get id for %s' % recipe.name)
+
+        for key_name in ['name', 'desc', 'rlist']:
+            self.redis.delete('rid:%s:%s' % (rid, key_name))
         self.redis.delete('recipe:%s:rid' % recipe.name)
-        self.redis.delete('rid:%s:name' % rid)
-        self.redis.delete('rid:%s:desc' % rid)
-        self.redis.delete('rid:%s:rlist' % rid)
+
         pid = self.redis.get('rid:%s:policy' % rid)
         self._delete_policy(pid)
+
         self.redis.srem('recipes', rid)
 
     def recipe_get(self, recipe):
@@ -179,6 +177,7 @@ class Store(StorageInterface):
 
         self.redis.set('rid:%s:name' % rid, recipe.name)
         self.redis.set('rid:%s:desc' % rid, recipe.desc)
+
         pid = self.redis.get('rid:%s:policy' % rid)
         pid = self._set_policy(recipe.policy, pid)
         self.redis.set('rid:%s:policy' % rid, pid)
@@ -197,17 +196,19 @@ class Store(StorageInterface):
         if not tid:
             raise NoTiddlerError('no tiddler found: %s:%s'
                     % (tiddler.bag, tiddler.title))
+
         revision_ids = self.redis.lrange('tid:%s:revisions' % tid, 0, -1)
         delete_keys = []
-        for rid in revision_ids:
+        for rvid in revision_ids:
             for field in ['text', 'tags', 'modified', 'modifier',
                     'fields', 'tid']:
-                delete_keys.append('rid:%s:%s' % (rid, field))
+                delete_keys.append('rvid:%s:%s' % (rvid, field))
         for field in ['title', 'bid', 'revisions']:
             delete_keys.append('tid:%s:%s' % (tid, field))
         delete_keys.append('tiddler:%s:%s:tid'
                 % (tiddler.bag, tiddler.title))
         self.redis.delete(*delete_keys)
+
         self.redis.srem('bid:%s:tiddlers' % bid, tid)
         self.redis.delete('tiddler:%s:%s:tid' % (tiddler.bag, tiddler.title))
 
@@ -247,10 +248,12 @@ class Store(StorageInterface):
         uid = self._id_for_entity('user', user.usersign)
         if not uid:
             raise NoUserError('no user found for %s' % user.usersign)
-        self.redis.delete('uid:%s:usersign' % uid)
-        self.redis.delete('uid:%s:password' % uid)
-        self.redis.delete('uid:%s:roles' % uid)
+
+        for key_name in ['usersign', 'password', 'roles']:
+            self.redis.delete('uid:%s:%s' % (uid, key_name))
+
         self.redis.delete('user:%s:uid' % user.usersign)
+
         self.redis.srem('users', uid)
 
     def user_get(self, user):
@@ -272,9 +275,11 @@ class Store(StorageInterface):
         self.redis.set('uid:%s:usersign' % uid, user.usersign)
         self.redis.set('uid:%s:password' % uid, user._password)
         self.redis.set('uid:%s:note' % uid, user.note)
+
         self.redis.delete('uid:%s:roles' % uid)
         for role in user.list_roles():
             self.redis.sadd('uid:%s:roles' % uid, role)
+
         self.redis.sadd('users', uid)
 
     def list_bags(self):
@@ -300,6 +305,7 @@ class Store(StorageInterface):
         if not bid:
             raise NoBagError('No bag while trying to list tiddlers: %s'
                     % bag.name)
+
         tids = self.redis.smembers('bid:%s:tiddlers' % bid)
         for tid in tids:
             title = self.redis.get('tid:%s:title' % tid)
@@ -310,9 +316,17 @@ class Store(StorageInterface):
         if not tid:
             raise NoTiddler('no such tiddler: %s:%s'
                     % (tiddler.bag, tiddler.title))
+
         revisions = self.redis.lrange('tid:%s:revisions' % tid, 0, -1)
         revisions.reverse()
         return revisions
+
+    def _delete_bag_tiddlers(self, name, bid):
+        tiddler_ids = list(self.redis.smembers('bid:%s:tiddlers' % bid))
+        for tid in tiddler_ids:
+            title = self.redis.get('tid:%s:title' % tid)
+            tiddler = Tiddler(title, name)
+            self.tiddler_delete(tiddler)
 
     def _delete_policy(self, pid):
         for item in Policy.attributes:
@@ -324,11 +338,13 @@ class Store(StorageInterface):
         policy = Policy()
         if not pid:
             return policy
-        for constraint in ['manage', 'accept', 'create', 'read', 'write']:
-            key = 'pid:%s:%s' % (pid, constraint)
-            values = self.redis.smembers(key)
-            setattr(policy, constraint, list(values))
-        policy.owner = self.redis.get('pid:%s:owner' % pid)
+        for constraint in Policy.attributes:
+            if constraint == 'owner':
+                policy.owner = self.redis.get('pid:%s:owner' % pid)
+            else:
+                key = 'pid:%s:%s' % (pid, constraint)
+                values = self.redis.smembers(key)
+                setattr(policy, constraint, list(values))
         return policy
 
     def _id_for_entity(self, entity, name):
@@ -350,11 +366,13 @@ class Store(StorageInterface):
     def _set_policy(self, container_policy, pid):
         if not pid:
             pid = self.redis.incr('ids:nextPolicyID')
-        for constraint in ['manage', 'accept', 'create', 'read', 'write']:
-            key = 'pid:%s:%s' % (pid, constraint)
-            for member in getattr(container_policy, constraint):
-                self.redis.sadd(key, member)
-        self.redis.set('pid:%s:owner' % pid, container_policy.owner)
+        for constraint in Policy.attributes:
+            if constraint == 'owner':
+                self.redis.set('pid:%s:owner' % pid, container_policy.owner)
+            else:
+                key = 'pid:%s:%s' % (pid, constraint)
+                for member in getattr(container_policy, constraint):
+                    self.redis.sadd(key, member)
         return pid
 
     def _tid_for_tiddler(self, tiddler):
