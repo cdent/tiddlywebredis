@@ -81,3 +81,11 @@ def test_list_bag_tiddlers():
     assert len(tiddlers) == 2
     assert ['alpha', 'beta'] == sorted([tiddler.title for tiddler in tiddlers])
 
+def test_list_bags():
+    bag = Bag('testthree')
+    store.put(bag)
+
+    bags = list(store.list_bags())
+    assert len(bags) == 2
+    assert ['testthree', 'testtwo'] == sorted([bag.name for bag in bags])
+

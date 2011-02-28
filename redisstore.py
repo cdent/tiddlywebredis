@@ -69,6 +69,7 @@ tiddler revisions:
 
 import redis
 
+from tiddlyweb.model.bag import Bag
 from tiddlyweb.model.policy import Policy
 from tiddlyweb.model.tiddler import Tiddler
 from tiddlyweb.store import NoBagError, NoTiddlerError
@@ -96,6 +97,7 @@ class Store(StorageInterface):
             self.tiddler_delete(tiddler)
         self.redis.delete('bid:%s:tiddlers' % bid)
         self.redis.delete('bag:%s:bid' % bag.name)
+        self.redis.srem('bags', bid)
 
     def bag_get(self, bag):
         bid = self.redis.get('bag:%s:bid' % bag.name)
@@ -120,7 +122,6 @@ class Store(StorageInterface):
         pid = self.redis.get('bid:%s:policy' % bid)
         pid = self._set_policy(bag.policy, pid)
         self.redis.set('bid:%s:policy' % bid, pid)
-
         self.redis.sadd('bags', bid)
 
     def tiddler_get(self, tiddler):
@@ -177,6 +178,12 @@ class Store(StorageInterface):
         rid = self._new_revision(tiddler, tid)
         self.redis.rpush('tid:%s:revisions' % tid, rid)
         self.redis.sadd('bid:%s:tiddlers' % bid, tid)
+
+    def list_bags(self):
+        bids = self.redis.smembers('bags')
+        for bid in bids:
+            name = self.redis.get('bid:%s:name' % bid)
+            yield Bag(name)
 
     def list_bag_tiddlers(self, bag):
         bid = self.redis.get('bag:%s:bid' % bag.name)
