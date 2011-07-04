@@ -65,7 +65,7 @@ tiddler revisions:
     rvid:#rvid:tid:     tid of this
 """
 
-import redis
+from redis.client import Redis
 
 from tiddlyweb.model.bag import Bag
 from tiddlyweb.model.policy import Policy
@@ -84,6 +84,53 @@ ENTITY_MAP = {
         'bag': 'bid',
         }
 
+class URedis(Redis):
+    """
+    Add some better unicode handling to the default redis class.
+    This works for us because we only care about unicode strings
+    anyway.
+    """
+
+    def get(self, name):
+        """
+        Return the value and key ``name`` or None, and decode it if not None.
+        """
+        value = Redis.get(self, name)
+        if value:
+            return value.decode(self.encoding)
+        return value
+
+    def lrange(self, name, start, end):
+        """
+        Return a slice of the list ``name`` between
+        position ``start`` and ``end``
+        
+        ``start`` and ``end`` can be negative numbers just like
+        Python slicing notation
+
+        decode the results
+        """
+        results = Redis.lrange(self, name, start, end)
+        return [result.decode(self.encoding) for result in results]
+
+    def hgetall(self, name):
+        """
+        Return a Python dict of the hash's name/value pairs, both key and
+        value decoded.
+        """
+        output = {}
+        info = Redis.hgetall(self, name)
+        for key, value in info.iteritems():
+            output[key.decode(self.encoding)] = value.decode(self.encoding)
+        return output
+
+    def smembers(self, name):
+        """
+        Return all members of the set ``name``, decoding.
+        """
+        values = Redis.smembers(self, name)
+        return (value.decode(self.encoding) for value in values)
+
 
 class Store(StorageInterface):
 
@@ -91,7 +138,7 @@ class Store(StorageInterface):
         global R
         super(Store, self).__init__(store_config, environ)
         if not R:
-            R = redis.Redis(**store_config)
+            R = URedis(**store_config)
         self.redis = R
 
     def bag_delete(self, bag):
@@ -352,7 +399,8 @@ class Store(StorageInterface):
             else:
                 key = 'pid:%s:%s' % (pid, constraint)
                 values = self.redis.smembers(key)
-                setattr(policy, constraint, list(values))
+                setattr(policy, constraint, [value.decode(
+                    self.redis.encoding) for value in values])
         return policy
 
     def _id_for_entity(self, entity, name):

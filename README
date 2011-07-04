@@ -21,7 +21,7 @@ do use db 5, then you could have:
   deletion. This may not be ideal though, as matching for keys when
   there are many may be expensive.
 
-* Unicode handling. Dealing with keys that might have ':' in them.
+* Dealing with keys that might have ':' in them.
 
 * Package as a normal tiddlywebplugin.
 
@@ -39,4 +39,4 @@ do use db 5, then you could have:
 !Copyright Etc
 
 Copyright 2011, Chris Dent <cdent@peermore.com>
-Release under the BSD License
+Released under the BSD License

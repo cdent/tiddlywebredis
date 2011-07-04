@@ -10,19 +10,24 @@ from tiddlyweb.model.recipe import Recipe
 from tiddlyweb.model.user import User
 from tiddlyweb.store import NoTiddlerError, NoBagError, NoUserError
 
+import urllib
+
+encoded_name = 'aaa%25%E3%81%86%E3%81%8F%E3%81%99'
+name = urllib.unquote(encoded_name).decode('utf-8')
+
 def setup_module(module):
     module.store = get_store(config)
     store.storage.redis.flushdb()
     module.environ = {'tiddlyweb.config': config}
 
 def test_store_bag():
-    bag = Bag('testone')
-    bag.desc = 'testone'
+    bag = Bag(name)
+    bag.desc = name
     bag.policy.accept.append('cdent')
 
     store.put(bag)
 
-    bag2 = Bag('testone')
+    bag2 = Bag(name)
     bag2 = store.get(bag2)
 
     assert bag.desc == bag2.desc
@@ -30,22 +35,22 @@ def test_store_bag():
     assert bag.policy.accept == bag2.policy.accept
 
 def test_store_tiddler():
-    tiddler = Tiddler('monkey', 'testone')
-    tiddler.text = 'cow'
-    tiddler.tags = ['tagone', 'tagtwo', 'tagthree']
-    tiddler.fields['field key one'] = 'fieldvalueone'
-    tiddler.fields['field key two'] = 'fieldvaluetwo'
-    tiddler.modifier = 'cdent'
+    tiddler = Tiddler(name, name)
+    tiddler.text = name
+    tiddler.tags = [name]
+    tiddler.fields['field key ' + name + ' one'] = name
+    tiddler.fields['field key ' + name + ' two'] = name
+    tiddler.modifier = name
     tiddler.modified = '20080202111111'
 
     store.put(tiddler)
 
-    tiddler2 = Tiddler('monkey', 'testone')
+    tiddler2 = Tiddler(name, name)
     tiddler2 = store.get(tiddler2)
 
     assert tiddler.text == tiddler2.text
     assert sorted(tiddler.tags) == sorted(tiddler2.tags)
-    assert tiddler.fields['field key two'] == tiddler2.fields['field key two']
+    assert tiddler.fields['field key ' + name + ' two'] == tiddler2.fields['field key ' + name + ' two']
     assert tiddler.modifier == tiddler2.modifier
     assert tiddler.modified == tiddler2.modified
 
@@ -64,20 +69,20 @@ def test_store_tiddler():
     revisions = store.list_tiddler_revisions(tiddler2)
     assert len(revisions) == 1
 
-    store.delete(Bag('testone'))
+    store.delete(Bag(name))
 
     py.test.raises(NoTiddlerError, 'store.get(tiddler2)')
 
 
 def test_list_bag_tiddlers():
-    bag = Bag('testtwo')
+    bag = Bag(name)
     store.put(bag)
 
-    tiddler = Tiddler('alpha', 'testtwo')
+    tiddler = Tiddler('alpha', name)
     tiddler.text = 'alpha cow'
     store.put(tiddler)
 
-    tiddler = Tiddler('beta', 'testtwo')
+    tiddler = Tiddler('beta', name)
     tiddler.text = 'beta cow'
     store.put(tiddler)
 
@@ -91,43 +96,28 @@ def test_list_bags():
 
     bags = list(store.list_bags())
     assert len(bags) == 2
-    assert ['testthree', 'testtwo'] == sorted([bag.name for bag in bags])
+    assert [name, 'testthree'] == sorted([bag.name for bag in bags])
 
 def test_users():
-    userc = User('cdent')
-    userc.set_password('foobar')
+    userc = User(name)
+    userc.set_password(name)
     userc.add_role('ADMIN')
     userc.note = 'A simple programmer of matter'
 
     store.put(userc)
 
-    userf = User('FND')
-    userf.set_password('I<3whitespace')
-
-    store.put(userf)
-
-    user2 = store.get(User('cdent'))
+    user2 = store.get(User(name))
     assert user2.usersign == userc.usersign
-    assert user2.check_password('foobar')
+    assert user2.check_password(name)
     assert user2.list_roles() == userc.list_roles()
     assert user2.note == userc.note
 
-    users = list(store.list_users())
-    assert len(users) == 2
-    assert ['FND', 'cdent'] == sorted([user.usersign for user in users])
-
-    store.delete(User('FND'))
-
-    users = list(store.list_users())
-    assert len(users) == 1
-
-    py.test.raises(NoUserError, "store.get(User('FND'))")
 
 def test_recipes():
-    store.put(Bag('alpha'))
+    store.put(Bag(name))
     store.put(Bag('beta'))
 
-    tiddler = Tiddler('steak', 'alpha')
+    tiddler = Tiddler('steak', name)
     tiddler.text = 'rare'
     store.put(tiddler)
     tiddler = Tiddler('liver', 'beta')
@@ -137,11 +127,11 @@ def test_recipes():
     tiddler.text = 'medium'
     store.put(tiddler)
 
-    recipec = Recipe('cow')
+    recipec = Recipe(name)
     recipec.desc = 'a meaty melange'
     recipec.policy.accept.append('cdent')
     recipec.set_recipe([
-        ('alpha', 'select=tag:systemConfig'),
+        (name, 'select=tag:systemConfig'),
         ('beta', '')])
 
     store.put(recipec)
@@ -154,7 +144,7 @@ def test_recipes():
     assert reciped.desc == recipec.desc
     recipe_list = reciped.get_recipe()
 
-    assert recipe_list[0] == ['alpha', 'select=tag:systemConfig']
+    assert recipe_list[0] == [name, 'select=tag:systemConfig']
     assert recipe_list[1] == ['beta', '']
 
     tiddlers = list(get_tiddlers_from_recipe(reciped, environ=environ))
@@ -162,7 +152,7 @@ def test_recipes():
     assert len(tiddlers) == 2
     for tiddler in tiddlers:
         assert tiddler.bag == 'beta'
-        if tiddler.title == 'alpha':
+        if tiddler.title == name:
             tiddler = store.get(tiddler)
             assert tiddler.text == 'medium'
 
