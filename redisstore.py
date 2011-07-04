@@ -278,6 +278,7 @@ class Store(StorageInterface):
         tiddler.tags = self.redis.smembers('rvid:%s:tags' % current_rvid)
         tiddler.fields = self.redis.hgetall('rvid:%s:fields' % current_rvid)
         tiddler.text = self.redis.get('rvid:%s:text' % current_rvid)
+        tiddler.revision = current_rvid
         return tiddler
 
     def tiddler_put(self, tiddler):
