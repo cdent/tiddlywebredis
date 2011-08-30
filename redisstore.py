@@ -92,6 +92,10 @@ class URedis(Redis):
     anyway.
     """
 
+    def __init__(self, *args, **kwargs):
+        self.encoding = 'utf-8'
+        Redis.__init__(self, *args, **kwargs)
+
     def uget(self, name):
         """
         Return the value and key ``name`` or None, and decode it if not None.
@@ -270,11 +274,17 @@ class Store(StorageInterface):
         if not tid:
             raise NoTiddlerError('unable to load %s:%s'
                     % (tiddler.bag, tiddler.title))
-        current_rvid = self.redis.lindex('tid:%s:revisions' % tid, -1)
+        if tiddler.revision:
+            current_rvid = tiddler.revision
+        else:
+            current_rvid = self.redis.lindex('tid:%s:revisions' % tid, -1)
         base_rvid = self.redis.lindex('tid:%s:revisions' % tid, 0)
         tiddler.creator = self.redis.uget('rvid:%s:modifier' % base_rvid)
         tiddler.created = self.redis.uget('rvid:%s:modified' % base_rvid)
         tiddler.modifier = self.redis.uget('rvid:%s:modifier' % current_rvid)
+        if not tiddler.modifier:
+            raise NoTiddlerError('unable to load %s:%s@%s'
+                    % (tiddler.bag, tiddler.title, current_rvid))
         tiddler.modified = self.redis.uget('rvid:%s:modified' % current_rvid)
         tiddler.type = self.redis.uget('rvid:%s:type' % current_rvid)
         tiddler.tags = list(self.redis.smembers('rvid:%s:tags' % current_rvid))
@@ -378,7 +388,8 @@ class Store(StorageInterface):
             raise NoTiddlerError('no such tiddler: %s:%s'
                     % (tiddler.bag, tiddler.title))
 
-        revisions = self.redis.lrange('tid:%s:revisions' % tid, 0, -1)
+        revisions = [int(i) for i in
+                self.redis.lrange('tid:%s:revisions' % tid, 0, -1)]
         revisions.reverse()
         return revisions
 
@@ -402,6 +413,8 @@ class Store(StorageInterface):
         for constraint in Policy.attributes:
             if constraint == 'owner':
                 policy.owner = self.redis.uget('pid:%s:owner' % pid)
+                if policy.owner == '':
+                    policy.owner = None
             else:
                 key = 'pid:%s:%s' % (pid, constraint)
                 values = self.redis.smembers(key)
@@ -423,7 +436,11 @@ class Store(StorageInterface):
         for tag in tiddler.tags:
             self.redis.sadd('rvid:%s:tags' % rvid, tag)
         if tiddler.fields:
-            self.redis.hmset('rvid:%s:fields' % rvid, tiddler.fields)
+            stored_fields = {}
+            for field in tiddler.fields.keys():
+                if not field.startswith('server.'):
+                    stored_fields[field] = tiddler.fields[field]
+            self.redis.hmset('rvid:%s:fields' % rvid, stored_fields)
         return rvid
 
     def _set_policy(self, container_policy, pid):
@@ -431,9 +448,13 @@ class Store(StorageInterface):
             pid = self.redis.incr('ids:nextPolicyID')
         for constraint in Policy.attributes:
             if constraint == 'owner':
-                self.redis.set('pid:%s:owner' % pid, container_policy.owner)
+                if container_policy.owner:
+                    self.redis.set('pid:%s:owner' % pid, container_policy.owner)
+                else:
+                    self.redis.set('pid:%s:owner' % pid, '')
             else:
                 key = 'pid:%s:%s' % (pid, constraint)
+                self.redis.delete(key)
                 for member in getattr(container_policy, constraint):
                     self.redis.sadd(key, member)
         return pid
