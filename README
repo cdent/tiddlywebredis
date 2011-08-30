@@ -1,7 +1,7 @@
 Experiment with using redis as a store for TiddlyWeb.
 
 You must be running a redis server for the tests to pass. The 'redis' module
-for Python is required.
+for Python is required. If you have hiredis, parsing will be improved.
 
 This code supports the full StorageInterface, including policies and
 tiddler revisions.
@@ -22,8 +22,6 @@ do use db 5, then you could have:
   there are many may be expensive.
 
 * Dealing with keys that might have ':' in them.
-
-* Package as a normal tiddlywebplugin.
 
 * Manage keys that operate as reverse indexes for things we might
   like to index_query, such as modifier, tags and fields. This has
