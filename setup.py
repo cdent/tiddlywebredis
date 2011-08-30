@@ -2,7 +2,7 @@ AUTHOR = 'Chris Dent'
 AUTHOR_EMAIL = 'cdent@peermore.com'
 NAME = 'tiddlywebplugins.redisstore'
 DESCRIPTION = 'TiddlyWeb store using Redis'
-VERSION = '0.1'
+VERSION = '0.2'
 
 
 import os
@@ -20,6 +20,6 @@ setup(
     url = 'http://pypi.python.org/pypi/%s' % NAME,
     platforms = 'Posix; MacOS X; Windows',
     packages = find_packages(exclude=['test']),
-    install_requires = ['setuptools', 'tiddlyweb'],
+    install_requires = ['setuptools', 'tiddlyweb', 'redis'],
     zip_safe = False
     )
