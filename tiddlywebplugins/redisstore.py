@@ -311,6 +311,7 @@ class Store(StorageInterface):
         rvid = self._new_revision(tiddler, tid)
         self.redis.rpush('tid:%s:revisions' % tid, rvid)
         self.redis.sadd('bid:%s:tiddlers' % bid, tid)
+        tiddler.revision = rvid
 
     def user_delete(self, user):
         uid = self._id_for_entity('user', user.usersign)

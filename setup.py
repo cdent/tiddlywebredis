@@ -2,7 +2,7 @@ AUTHOR = 'Chris Dent'
 AUTHOR_EMAIL = 'cdent@peermore.com'
 NAME = 'tiddlywebplugins.redisstore'
 DESCRIPTION = 'TiddlyWeb store using Redis'
-VERSION = '0.2'
+VERSION = '0.3'
 
 
 import os
