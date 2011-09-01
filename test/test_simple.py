@@ -12,7 +12,7 @@ from tiddlyweb.store import NoTiddlerError, NoBagError, NoUserError
 
 def setup_module(module):
     module.store = get_store(config)
-    store.storage.redis.flushdb()
+    tore.storage.redis.flushdb()
     module.environ = {'tiddlyweb.config': config}
 
 def test_store_bag():

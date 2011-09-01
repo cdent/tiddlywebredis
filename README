@@ -17,6 +17,8 @@ do use db 5, then you could have:
 
 !ToDo
 
+* Consider m{get,set} for some of the {gets,sets}.
+
 * Consider using r->keys('tid:1:*') and similar to gather keys for
   deletion. This may not be ideal though, as matching for keys when
   there are many may be expensive.
@@ -26,7 +28,9 @@ do use db 5, then you could have:
 * Manage keys that operate as reverse indexes for things we might
   like to index_query, such as modifier, tags and fields. This has
   not been done thus far as diddling with that would distract from
-  getting the core set of keys in place.
+  getting the core set of keys in place. Something like
+
+    tags:<tagname>:tids => set of tids that have that tag
 
 * Consider reverse indexes for things like bags in recipes, and 
   users in policies. (Such things have been useful in TiddlySpace).
